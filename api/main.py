@@ -149,8 +149,11 @@ async def _run_msb(*args: str, timeout: float = 60.0) -> tuple[int, str, str]:
             proc.communicate(), timeout=timeout
         )
     except asyncio.TimeoutError:
-        proc.kill()
-        await proc.wait()
+        try:
+            proc.kill()
+            await proc.wait()
+        except ProcessLookupError:
+            pass  # process already exited
         raise HTTPException(status_code=504, detail="microsandbox command timed out")
 
     return (
@@ -200,6 +203,34 @@ async def list_vms():
     return _parse_list_output(stdout)
 
 
+
+@app.get("/api/vms/{vm_id}")
+async def get_vm(vm_id: str):
+    """Get detailed info for a single sandbox including CPU/RAM."""
+    code, stdout, stderr = await _run_msb("inspect", vm_id, "--format", "json")
+    if code != 0:
+        raise HTTPException(status_code=404, detail=stderr or f"VM '{vm_id}' not found")
+    try:
+        data = json.loads(stdout)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail="Failed to parse sandbox info")
+    config = data.get("config", {})
+    resources = config.get("resources", {})
+    image = config.get("image", {})
+    distro = "unknown"
+    for key, ref in SUPPORTED_DISTROS.items():
+        if isinstance(image, dict) and ref in str(image.get("Oci", {}).get("reference", "")):
+            distro = key
+            break
+    return {
+        "vm_id": data.get("name", vm_id),
+        "distro": distro,
+        "status": data.get("status", "unknown").lower(),
+        "ram_mb": resources.get("memory_mib", 0),
+        "cpu_cores": resources.get("cpus", 0),
+        "created_at": data.get("created_at"),
+    }
+
 @app.post("/api/vms/create", response_model=VMCreateResponse)
 async def create_vm(req: VMCreateRequest):
     """Boot a new microVM with the requested hardware profile."""
@@ -214,6 +245,7 @@ async def create_vm(req: VMCreateRequest):
         "--detach",
         "--cpus", str(req.cpu_cores),
         "--memory", mem_flag,
+        timeout=300.0,  # 5 min — image pull can be slow
     )
 
     if code != 0:
@@ -232,13 +264,17 @@ async def create_vm(req: VMCreateRequest):
 
 @app.post("/api/vms/{vm_id}/stop")
 async def stop_vm(vm_id: str):
-    """Gracefully stop a running sandbox."""
-    code, stdout, stderr = await _run_msb("stop", vm_id, "--force")
+    """Stop a sandbox — force-kill if graceful shutdown times out."""
+    # Try graceful first with a short timeout
+    code, stdout, stderr = await _run_msb("stop", vm_id, "--force", "--timeout", "5", timeout=15.0)
     if code != 0:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to stop VM '{vm_id}': {stderr or 'unknown error'}",
-        )
+        # Fallback: immediate force-kill (no timeout)
+        code2, _, stderr2 = await _run_msb("stop", vm_id, "--force", timeout=10.0)
+        if code2 != 0:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to stop VM '{vm_id}': {stderr2 or stderr or 'unknown error'}",
+            )
     return {"status": "stopped", "vm_id": vm_id}
 
 

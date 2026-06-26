@@ -1,22 +1,11 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import "@xterm/xterm/css/xterm.css";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
 export const metadata: Metadata = {
-  title: "HiveSandbox — Developer Playground",
+  title: "HiveSandbox - Developer Playground",
   description:
-    "Spin up isolated microVMs in seconds. Interactive terminal, resource controls, and a beautiful dark interface.",
+    "Spin up isolated microVMs in seconds with an interactive terminal and clean resource controls.",
   icons: {
     icon: "/favicon.svg",
   },
@@ -28,10 +17,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
+    <html lang="en" className="h-full antialiased">
       <body className="h-full">{children}</body>
     </html>
   );

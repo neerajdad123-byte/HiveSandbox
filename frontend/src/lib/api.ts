@@ -47,6 +47,11 @@ export async function createVM(
   });
 }
 
+/** Get detailed info for a single VM (includes cpu/ram). */
+export async function getVM(vmId: string): Promise<VMInfo> {
+  return request<VMInfo>(`/api/vms/${vmId}`);
+}
+
 /** Stop (and remove) a VM by id. */
 export async function stopVM(vmId: string): Promise<{ status: string }> {
   return request<{ status: string }>(`/api/vms/${vmId}/stop`, {
