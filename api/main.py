@@ -231,28 +231,27 @@ async def get_vm(vm_id: str):
         "created_at": data.get("created_at"),
     }
 
+
 @app.post("/api/vms/create", response_model=VMCreateResponse)
 async def create_vm(req: VMCreateRequest):
-    """Boot a new microVM with the requested hardware profile."""
+    """Boot a new microVM — returns instantly, VM appears when ready."""
     vm_id = _short_id()
     distro_ref = SUPPORTED_DISTROS[req.distro]
     mem_flag = _memory_flag(req.ram_mb)
 
-    code, stdout, stderr = await _run_msb(
-        "run",
-        distro_ref,
-        "--name", vm_id,
-        "--detach",
-        "--cpus", str(req.cpu_cores),
-        "--memory", mem_flag,
-        timeout=300.0,  # 5 min — image pull can be slow
-    )
-
-    if code != 0:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to create VM: {stderr or 'unknown error'}",
+    # Fire-and-forget: spawn in background so the API returns immediately.
+    # The frontend polls /api/vms and picks up the VM when msb finishes.
+    asyncio.create_task(
+        _run_msb(
+            "run",
+            distro_ref,
+            "--name", vm_id,
+            "--detach",
+            "--cpus", str(req.cpu_cores),
+            "--memory", mem_flag,
+            timeout=300.0,
         )
+    )
 
     return VMCreateResponse(
         vm_id=vm_id,
